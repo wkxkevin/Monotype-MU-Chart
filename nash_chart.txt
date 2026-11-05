@@ -1,15 +1,42 @@
 1. Uniform usage (value 0.5000)
-fightin flying  bug     steel   fire    water   electri ice     dragon  dark    fairy
-0.48%   17.84%  5.99%   9.02%   6.61%   11.25%  4.37%   2.75%   10.81%  23.94%  6.95%
+normal  fightin flying  ghost   steel   water   electri ice     dragon  dark    fairy
+5.14%   7.07%   26.87%  4.35%   14.90%  14.77%  5.84%   4.95%   7.05%   8.58%   0.49%
 
-2. Ladder usage, band 0.25 (value 0.5337)
+2. Ladder usage, band 0 (value 0.5482)
 flying
 100.00%
 
 3. Confidence interval, uniform usage (1000 samples)
-normal  fightin flying  poison  ground  rock    bug     ghost   steel   fire    water   grass   electri psychic ice     dragon  dark    fairy
-4.54%   3.11%   18.05%  2.63%   0.75%   0.41%   3.42%   1.10%   8.96%   4.06%   13.72%  0.26%   3.07%   0.39%   3.46%   8.74%   17.30%  6.03%
+normal  fightin flying  poison  ground  rock    ghost   steel   fire    water   grass   electri psychic ice     dragon  dark    fairy
+4.59%   5.70%   24.09%  0.18%   0.14%   0.09%   2.29%   14.61%  2.14%   15.45%  0.13%   3.47%   0.36%   2.42%   11.82%  8.45%   4.05%
 
-4. Confidence interval, ladder usage, band 0.25 (1000 samples)
-normal  fightin flying  poison  ground  bug     ghost   steel   fire    water   electri ice     dragon  dark    fairy
-0.22%   0.20%   82.69%  0.06%   0.12%   0.02%   0.04%   6.42%   0.03%   1.00%   0.02%   0.02%   0.72%   7.43%   1.00%
+4. Confidence interval, ladder usage, band 0 (1000 samples)
+flying  steel
+73.90%  26.10%
+
+MWP VII: 
+5. Tournament usage, band 0, fixed (value 0.5359)
+flying
+100.00%
+
+6. Confidence interval, tournament usage, band 0 (1000 samples)
+fightin flying  ground  steel   water   dragon  dark    fairy
+1.70%   81.10%  0.10%   10.30%  6.00%   0.10%   0.40%   0.30%
+
+MFPL III: 
+5. Tournament usage, band 0, fixed (value 0.5428)
+flying
+100.00%
+
+6. Confidence interval, tournament usage, band 0 (1000 samples)
+fightin flying  steel   water   ice     dark    fairy
+0.10%   94.70%  0.50%   4.00%   0.20%   0.10%   0.40%
+
+MPL: 
+5. Tournament usage, band 0, fixed (value 0.5390)
+flying
+100.00%
+
+6. Confidence interval, tournament usage, band 0 (1000 samples)
+fightin flying  steel   water   dark    fairy
+2.30%   89.10%  4.80%   2.40%   1.20%   0.20%

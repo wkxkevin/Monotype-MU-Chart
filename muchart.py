@@ -1,9 +1,11 @@
 import os
 import re
+
 import numpy as np
 import requests
 from scipy import stats
 from scipy.optimize import linprog
+
 
 def wilson_ci(k, n, z=1.96):
     p = k / n
@@ -11,6 +13,7 @@ def wilson_ci(k, n, z=1.96):
     center = (p + z**2 / (2 * n)) / denom
     margin = (z * np.sqrt(p * (1 - p) / n + z**2 / (4 * n**2))) / denom
     return (center - margin) * 100, (center + margin) * 100
+
 
 def solve_nash(best_chart):
     A = np.asarray(best_chart, dtype=float)
@@ -65,6 +68,7 @@ def solve_nash(best_chart):
 
     return p, q, value
 
+
 def solve_banded_row(A, usage, band=0.5):
     A = np.asarray(A, dtype=float)
     n, m = A.shape
@@ -74,15 +78,15 @@ def solve_banded_row(A, usage, band=0.5):
     # Variables: p[0:n], u[0:m], w[0:m], t
     N = n + 2 * m + 1
     c = np.zeros(N)
-    c[n:n + m] = -lo
-    c[n + m:n + 2 * m] = hi
+    c[n : n + m] = -lo
+    c[n + m : n + 2 * m] = hi
     c[-1] = -1
 
     # -A.T @ p + u - w + t <= 0
     A_ub = np.zeros((m, N))
     A_ub[:, :n] = -A.T
-    A_ub[:, n:n + m] = np.eye(m)
-    A_ub[:, n + m:n + 2 * m] = -np.eye(m)
+    A_ub[:, n : n + m] = np.eye(m)
+    A_ub[:, n + m : n + 2 * m] = -np.eye(m)
     A_ub[:, -1] = 1
 
     A_eq = np.zeros((1, N))
@@ -90,14 +94,17 @@ def solve_banded_row(A, usage, band=0.5):
 
     res = linprog(
         c,
-        A_ub=A_ub, b_ub=np.zeros(m),
-        A_eq=A_eq, b_eq=[1],
+        A_ub=A_ub,
+        b_ub=np.zeros(m),
+        A_eq=A_eq,
+        b_eq=[1],
         bounds=[(0, None)] * (n + 2 * m) + [(None, None)],
         method="highs",
     )
     if not res.success:
         raise ValueError("Banded optimization failed")
     return res.x[:n], -res.fun
+
 
 def sample_matrices(counts, n_samples, seed=0):
     """Sample zero-sum win-rate matrices from Beta posteriors of pooled counts."""
@@ -114,17 +121,19 @@ def sample_matrices(counts, n_samples, seed=0):
         samples.append(A)
     return samples
 
+
 def format_mix(title, names, probs, cap=10, line_width=80, threshold=1e-4):
     """Title, then name row and percent row, wrapped to line_width."""
     keep = [(n, p) for n, p in zip(names, probs) if p > threshold]
     per_line = max(1, line_width // (cap + 1))
     out = [title]
     for start in range(0, len(keep), per_line):
-        chunk = keep[start:start + per_line]
+        chunk = keep[start : start + per_line]
         out.append("".join(n[:cap].ljust(cap) + " " for n, _ in chunk).rstrip())
         out.append("".join(f"{p:.2%}".ljust(cap) + " " for _, p in chunk).rstrip())
         out.append("")
     return "\n".join(out)
+
 
 dates = [
     "2026-03",
@@ -166,42 +175,56 @@ types = [
     "dark",
     "fairy",
 ]
-gliscor_ban = True   # True: use only 2026-08 onward
-BAND = 0.25           # usage band for the ladder-usage experiments
-N_SAMPLES = 1000      # matrices sampled for the CI experiments
-CELL_CAP = 7        # max characters per type name in the output
-LINE_WIDTH = 200      # wrap output lines at this width
+gliscor_ban = True  # True: use only 2026-08 onward
+BAND = 0  # usage band for the ladder-usage experiments
+N_SAMPLES = 1000  # matrices sampled for the CI experiments
+CELL_CAP = 7  # max characters per type name in the output
+LINE_WIDTH = 200  # wrap output lines at this width
 
-START_IDX = dates.index("2026-09") if gliscor_ban else 0
+START_IDX = dates.index("2026-08") if gliscor_ban else 0
 
 print("Usage")
-monthly_games = np.zeros((8,len(dates)))
+monthly_games = np.zeros((8, len(dates)))
 total_games = np.zeros(8)
-monthly_usage = np.zeros((8,len(dates),18))
-for i,chart in enumerate(charts):
-    for j,date in enumerate(dates):
+monthly_usage = np.zeros((8, len(dates), 18))
+for i, chart in enumerate(charts):
+    for j, date in enumerate(dates):
         response = requests.get(
-            "https://www.smogon.com/stats/" + date + "/metagame/" + chart.replace("-matchup_chart", ""), stream=True
+            "https://www.smogon.com/stats/"
+            + date
+            + "/metagame/"
+            + chart.replace("-matchup_chart", ""),
+            stream=True,
         )
         response2 = requests.get(
-            "https://www.smogon.com/stats/" + date + "/" + chart.replace("-matchup_chart", ""), stream=True
+            "https://www.smogon.com/stats/"
+            + date
+            + "/"
+            + chart.replace("-matchup_chart", ""),
+            stream=True,
         )
         lines = response2.iter_lines(decode_unicode=True)
-        monthly_games[i][j] = np.round(float(next(lines)[15:])*float(next(lines)[18:]))
+        monthly_games[i][j] = np.round(
+            float(next(lines)[15:]) * float(next(lines)[18:])
+        )
         for line in response.iter_lines(decode_unicode=True):
             if len(line) < 5:
                 break
-            if(line[4] != 't' and line[:4] == "mono"):
+            if line[4] != "t" and line[:4] == "mono":
                 match = re.match(r"^(.*?)\.+(\d{1,2}\.\d{5})%$", line[4:])
                 if match:
-                    monthly_usage[i][j][types.index(match.group(1))] = np.round(float(match.group(2))*monthly_games[i][j])
+                    monthly_usage[i][j][types.index(match.group(1))] = np.round(
+                        float(match.group(2)) * monthly_games[i][j]
+                    )
 monthly_usage = monthly_usage.astype(int)
 monthly_games = monthly_games.astype(int)
 total_games = np.sum(monthly_games, axis=1)
 
 print("Aggregate Fetch")
 aggregate_charts = np.zeros((8, 18, 18))
-for d,date in enumerate(dates):
+all_months = np.zeros((8, 18, 18))  # counts summed over every month
+post_ban = np.zeros((8, 18, 18))  # counts summed over months from START_IDX on
+for d, date in enumerate(dates):
     os.makedirs(date, exist_ok=True)
     print(date)
     for i, chart in enumerate(charts):
@@ -215,14 +238,22 @@ for d,date in enumerate(dates):
                 if "+" not in line
             ]
             mod_chart = [mod_chart[i] for i in range(len(mod_chart)) if i % 2 == 0]
+            arr = np.array(
+                [
+                    [float(cell.strip()) for cell in line.split("|")]
+                    for line in mod_chart
+                ]
+            )
+            all_months[i] += arr
             if d >= START_IDX:
-                aggregate_charts[i] += np.array(
-                    [
-                        [float(cell.strip()) for cell in line.split("|")]
-                        for line in mod_chart
-                    ]
-                )
+                post_ban[i] += arr
             file.write("\n".join(mod_chart))
+
+affected = [types.index("flying"), types.index("ground")]
+mask = np.zeros((18, 18), dtype=bool)
+mask[affected, :] = True
+mask[:, affected] = True  # any pair involving flying or ground
+aggregate_charts = np.where(mask, post_ban, all_months)
 
 os.makedirs("aggregate", exist_ok=True)
 print("Aggregate")
@@ -232,10 +263,10 @@ best_chart = np.zeros((18, 18))
 for i in range(8):
     chart = aggregate_charts[i]
     total = chart + chart.T
-    percent = np.divide(
-        chart, total, out=np.full_like(chart, 50.0), where=total != 0
-    ) * 100
-    if(i == 2):
+    percent = (
+        np.divide(chart, total, out=np.full_like(chart, 50.0), where=total != 0) * 100
+    )
+    if i == 2:
         best_chart = percent / 100
 
     lines = [sep]
@@ -424,15 +455,134 @@ ci_uniform_p = np.mean([solve_nash(A)[0] for A in samples], axis=0)
 ci_trend_p = np.mean([solve_banded_row(A, usage, BAND)[0] for A in samples], axis=0)
 
 results = [
-    format_mix(f"1. Uniform usage (value {uniform_value:.4f})",
-               types, uniform_p, CELL_CAP, LINE_WIDTH),
-    format_mix(f"2. Ladder usage, band {BAND} (value {trend_value:.4f})",
-               types, trend_p, CELL_CAP, LINE_WIDTH),
-    format_mix(f"3. Confidence interval, uniform usage ({N_SAMPLES} samples)",
-               types, ci_uniform_p, CELL_CAP, LINE_WIDTH),
-    format_mix(f"4. Confidence interval, ladder usage, band {BAND} ({N_SAMPLES} samples)",
-               types, ci_trend_p, CELL_CAP, LINE_WIDTH),
+    format_mix(
+        f"1. Uniform usage (value {uniform_value:.4f})",
+        types,
+        uniform_p,
+        CELL_CAP,
+        LINE_WIDTH,
+    ),
+    format_mix(
+        f"2. Ladder usage, band {BAND} (value {trend_value:.4f})",
+        types,
+        trend_p,
+        CELL_CAP,
+        LINE_WIDTH,
+    ),
+    format_mix(
+        f"3. Confidence interval, uniform usage ({N_SAMPLES} samples)",
+        types,
+        ci_uniform_p,
+        CELL_CAP,
+        LINE_WIDTH,
+    ),
+    format_mix(
+        f"4. Confidence interval, ladder usage, band {BAND} ({N_SAMPLES} samples)",
+        types,
+        ci_trend_p,
+        CELL_CAP,
+        LINE_WIDTH,
+    ),
 ]
+
+# ---- Tournament usage: number of times each type was brought ----
+tour_data = [
+    {
+        "dragon": 34,
+        "steel": 32,
+        "water": 29,
+        "flying": 25,
+        "dark": 24,
+        "fairy": 23,
+        "ground": 20,
+        "fighting": 19,
+        "ghost": 13,
+        "fire": 10,
+        "bug": 6,
+        "rock": 5,
+        "electric": 4,
+        "normal": 3,
+        "poison": 3,
+        "grass": 1,
+        "psychic": 1,
+        "ice": 0,
+    },
+    {
+        "dragon": 32,
+        "flying": 26,
+        "dark": 25,
+        "water": 22,
+        "ground": 21,
+        "fairy": 20,
+        "fire": 18,
+        "steel": 17,
+        "fighting": 16,
+        "ghost": 10,
+        "poison": 4,
+        "normal": 2,
+        "grass": 1,
+        "bug": 0,
+        "electric": 0,
+        "ice": 0,
+        "psychic": 0,
+        "rock": 0,
+    },
+    {
+        "dragon": 30,
+        "steel": 22,
+        "flying": 21,
+        "water": 18,
+        "dark": 18,
+        "ground": 14,
+        "fighting": 13,
+        "fire": 11,
+        "fairy": 11,
+        "ghost": 7,
+        "poison": 4,
+        "normal": 3,
+        "bug": 3,
+        "grass": 1,
+        "electric": 1,
+        "ice": 0,
+        "psychic": 0,
+        "rock": 0,
+    },
+]
+tour_names = ["MWP VII", "MFPL III", "MPL"]
+for i in range(3):
+    results += [tour_names[i] + ": "]
+    TOURNEY_COUNTS = tour_data[i]
+    tourney_counts = np.array([TOURNEY_COUNTS[t] for t in types], dtype=float)
+    tourney_usage = tourney_counts / tourney_counts.sum()
+    PRIOR = 0.5  # Dirichlet pseudo-count per type, so rare or unused types aren't "impossible"
+
+    # Experiment 5, set in stone: point-estimate matrix and point-estimate usage
+    stone_p, stone_value = solve_banded_row(best_chart, tourney_usage, band=BAND)
+
+    # Experiment 6, confidence interval: resample the matrix and the usage
+    rng = np.random.default_rng(1)
+    usage_samples = rng.dirichlet(tourney_counts + PRIOR, size=N_SAMPLES)
+    ci_stone_p = np.mean(
+        [solve_banded_row(A, u, BAND)[0] for A, u in zip(samples, usage_samples)],
+        axis=0,
+    )
+
+    results += [
+        format_mix(
+            f"5. Tournament usage, band {BAND}, fixed (value {stone_value:.4f})",
+            types,
+            stone_p,
+            CELL_CAP,
+            LINE_WIDTH,
+        ),
+        format_mix(
+            f"6. Confidence interval, tournament usage, band {BAND} ({N_SAMPLES} samples)",
+            types,
+            ci_stone_p,
+            CELL_CAP,
+            LINE_WIDTH,
+        ),
+    ]
 
 text = "\n".join(results)
 with open("nash_chart.txt", "w") as file:
