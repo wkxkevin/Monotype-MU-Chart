@@ -1,9 +1,9 @@
 import os
-
+import re
 import numpy as np
 import requests
 from scipy import stats
-
+from scipy.optimize import linprog
 
 def wilson_ci(k, n, z=1.96):
     p = k / n
@@ -12,8 +12,130 @@ def wilson_ci(k, n, z=1.96):
     margin = (z * np.sqrt(p * (1 - p) / n + z**2 / (4 * n**2))) / denom
     return (center - margin) * 100, (center + margin) * 100
 
+def solve_nash(best_chart):
+    A = np.asarray(best_chart, dtype=float)
+    n, m = A.shape
 
-dates = ["2026-03", "2026-04", "2026-05"]
+    # Row player's LP: maximize guaranteed win rate
+    # Variables: p[0:n], v
+    c = np.zeros(n + 1)
+    c[-1] = -1  # maximize v
+
+    # A.T @ p >= v  =>  -A.T @ p + v <= 0
+    A_ub = np.hstack([-A.T, np.ones((m, 1))])
+
+    A_eq = np.zeros((1, n + 1))
+    A_eq[0, :n] = 1
+
+    b_eq = [1]
+    b_ub = np.zeros(m)
+
+    bounds = [(0, None)] * n + [(None, None)]
+
+    row_result = linprog(
+        c, A_ub=A_ub, b_ub=b_ub, A_eq=A_eq, b_eq=b_eq, bounds=bounds, method="highs"
+    )
+
+    # Column player's LP: minimize maximum row payoff
+    # Variables: q[0:m], v
+    c = np.zeros(m + 1)
+    c[-1] = 1
+
+    A_ub = np.hstack([A, -np.ones((n, 1))])
+
+    A_eq = np.zeros((1, m + 1))
+    A_eq[0, :m] = 1
+
+    col_result = linprog(
+        c,
+        A_ub=A_ub,
+        b_ub=np.zeros(n),
+        A_eq=A_eq,
+        b_eq=[1],
+        bounds=[(0, None)] * m + [(None, None)],
+        method="highs",
+    )
+
+    if not row_result.success or not col_result.success:
+        raise ValueError("Optimization failed")
+
+    p = row_result.x[:n]
+    q = col_result.x[:m]
+    value = row_result.x[-1]
+
+    return p, q, value
+
+def solve_banded_row(A, usage, band=0.5):
+    A = np.asarray(A, dtype=float)
+    n, m = A.shape
+    lo = usage * (1 - band)
+    hi = usage * (1 + band)
+
+    # Variables: p[0:n], u[0:m], w[0:m], t
+    N = n + 2 * m + 1
+    c = np.zeros(N)
+    c[n:n + m] = -lo
+    c[n + m:n + 2 * m] = hi
+    c[-1] = -1
+
+    # -A.T @ p + u - w + t <= 0
+    A_ub = np.zeros((m, N))
+    A_ub[:, :n] = -A.T
+    A_ub[:, n:n + m] = np.eye(m)
+    A_ub[:, n + m:n + 2 * m] = -np.eye(m)
+    A_ub[:, -1] = 1
+
+    A_eq = np.zeros((1, N))
+    A_eq[0, :n] = 1  # sum(p) = 1
+
+    res = linprog(
+        c,
+        A_ub=A_ub, b_ub=np.zeros(m),
+        A_eq=A_eq, b_eq=[1],
+        bounds=[(0, None)] * (n + 2 * m) + [(None, None)],
+        method="highs",
+    )
+    if not res.success:
+        raise ValueError("Banded optimization failed")
+    return res.x[:n], -res.fun
+
+def sample_matrices(counts, n_samples, seed=0):
+    """Sample zero-sum win-rate matrices from Beta posteriors of pooled counts."""
+    rng = np.random.default_rng(seed)
+    iu = np.triu_indices(18, 1)
+    samples = []
+    for _ in range(n_samples):
+        A = np.full((18, 18), 0.5)
+        for r, c in zip(*iu):
+            k_rc, k_cr = counts[r, c], counts[c, r]
+            s = rng.beta(k_rc + 1, k_cr + 1) if k_rc + k_cr > 0 else 0.5
+            A[r, c] = s
+            A[c, r] = 1 - s
+        samples.append(A)
+    return samples
+
+def format_mix(title, names, probs, cap=10, line_width=80, threshold=1e-4):
+    """Title, then name row and percent row, wrapped to line_width."""
+    keep = [(n, p) for n, p in zip(names, probs) if p > threshold]
+    per_line = max(1, line_width // (cap + 1))
+    out = [title]
+    for start in range(0, len(keep), per_line):
+        chunk = keep[start:start + per_line]
+        out.append("".join(n[:cap].ljust(cap) + " " for n, _ in chunk).rstrip())
+        out.append("".join(f"{p:.2%}".ljust(cap) + " " for _, p in chunk).rstrip())
+        out.append("")
+    return "\n".join(out)
+
+dates = [
+    "2026-03",
+    "2026-04",
+    "2026-05",
+    "2026-06",
+    "2026-07",
+    "2026-08",
+    "2026-09",
+    "2026-10",
+]
 charts = [
     "gen9monotype-matchup_chart-0.txt",
     "gen9monotype-matchup_chart-1500.txt",
@@ -24,32 +146,6 @@ charts = [
     "gen9nationaldexmonotype-matchup_chart-1630.txt",
     "gen9nationaldexmonotype-matchup_chart-1760.txt",
 ]
-
-aggregate_charts = np.zeros((8, 18, 18))
-for date in dates:
-    os.makedirs(date, exist_ok=True)
-    print(date)
-    for i, chart in enumerate(charts):
-        response = requests.get(
-            "https://www.smogon.com/stats/" + date + "/monotype/matchupcharts/" + chart
-        )
-        with open(date + "/" + chart, "w") as file:
-            mod_chart = [
-                line[10:-1]
-                for line in response.text.splitlines()[4:57]
-                if "+" not in line
-            ]
-            mod_chart = [mod_chart[i] for i in range(len(mod_chart)) if i % 2 == 0]
-            aggregate_charts[i] += np.array(
-                [
-                    [float(cell.strip()) for cell in line.split("|")]
-                    for line in mod_chart
-                ]
-            )
-            file.write("\n".join(mod_chart))
-
-os.makedirs("aggregate", exist_ok=True)
-print("Aggregate")
 types = [
     "normal",
     "fighting",
@@ -70,14 +166,77 @@ types = [
     "dark",
     "fairy",
 ]
+gliscor_ban = True   # True: use only 2026-08 onward
+BAND = 0.25           # usage band for the ladder-usage experiments
+N_SAMPLES = 1000      # matrices sampled for the CI experiments
+CELL_CAP = 7        # max characters per type name in the output
+LINE_WIDTH = 200      # wrap output lines at this width
 
+START_IDX = dates.index("2026-09") if gliscor_ban else 0
+
+print("Usage")
+monthly_games = np.zeros((8,len(dates)))
+total_games = np.zeros(8)
+monthly_usage = np.zeros((8,len(dates),18))
+for i,chart in enumerate(charts):
+    for j,date in enumerate(dates):
+        response = requests.get(
+            "https://www.smogon.com/stats/" + date + "/metagame/" + chart.replace("-matchup_chart", ""), stream=True
+        )
+        response2 = requests.get(
+            "https://www.smogon.com/stats/" + date + "/" + chart.replace("-matchup_chart", ""), stream=True
+        )
+        lines = response2.iter_lines(decode_unicode=True)
+        monthly_games[i][j] = np.round(float(next(lines)[15:])*float(next(lines)[18:]))
+        for line in response.iter_lines(decode_unicode=True):
+            if len(line) < 5:
+                break
+            if(line[4] != 't' and line[:4] == "mono"):
+                match = re.match(r"^(.*?)\.+(\d{1,2}\.\d{5})%$", line[4:])
+                if match:
+                    monthly_usage[i][j][types.index(match.group(1))] = np.round(float(match.group(2))*monthly_games[i][j])
+monthly_usage = monthly_usage.astype(int)
+monthly_games = monthly_games.astype(int)
+total_games = np.sum(monthly_games, axis=1)
+
+print("Aggregate Fetch")
+aggregate_charts = np.zeros((8, 18, 18))
+for d,date in enumerate(dates):
+    os.makedirs(date, exist_ok=True)
+    print(date)
+    for i, chart in enumerate(charts):
+        response = requests.get(
+            "https://www.smogon.com/stats/" + date + "/monotype/matchupcharts/" + chart
+        )
+        with open(date + "/" + chart, "w") as file:
+            mod_chart = [
+                line[10:-1]
+                for line in response.text.splitlines()[4:57]
+                if "+" not in line
+            ]
+            mod_chart = [mod_chart[i] for i in range(len(mod_chart)) if i % 2 == 0]
+            if d >= START_IDX:
+                aggregate_charts[i] += np.array(
+                    [
+                        [float(cell.strip()) for cell in line.split("|")]
+                        for line in mod_chart
+                    ]
+                )
+            file.write("\n".join(mod_chart))
+
+os.makedirs("aggregate", exist_ok=True)
+print("Aggregate")
 col_w = 9
 sep = "+" + (("-" * col_w + "+") * 19)
-
+best_chart = np.zeros((18, 18))
 for i in range(8):
     chart = aggregate_charts[i]
     total = chart + chart.T
-    percent = np.divide(chart, total, out=np.zeros_like(chart), where=total != 0) * 100
+    percent = np.divide(
+        chart, total, out=np.full_like(chart, 50.0), where=total != 0
+    ) * 100
+    if(i == 2):
+        best_chart = percent / 100
 
     lines = [sep]
     header = "|" + f"{'':<{col_w}}|" + "".join(f"{t:<{col_w}}|" for t in types)
@@ -142,7 +301,7 @@ for i in range(8):
 
 def bucket(pct):
     if pct < 45:
-        return -int((55 - pct) // 10) - 1
+        return -int((55 - pct) // 10)
     elif pct > 55:
         return int((pct - 45) // 10)
     else:
@@ -248,6 +407,36 @@ for i in range(18):
                 global_chart[j][i] = -global_chart[i][j]
             else:
                 global_chart[i][j] = -global_chart[j][i]
+
+print("Nash")
+usage_totals = monthly_usage[2, START_IDX:].sum(axis=0)
+usage = usage_totals / usage_totals.sum()
+
+# Experiment 1: uniform usage, point estimate
+uniform_p, _, uniform_value = solve_nash(best_chart)
+
+# Experiment 2: ladder usage, point estimate
+trend_p, trend_value = solve_banded_row(best_chart, usage, band=BAND)
+
+# Experiments 3 and 4: average over sampled matrices
+samples = sample_matrices(aggregate_charts[2], N_SAMPLES)
+ci_uniform_p = np.mean([solve_nash(A)[0] for A in samples], axis=0)
+ci_trend_p = np.mean([solve_banded_row(A, usage, BAND)[0] for A in samples], axis=0)
+
+results = [
+    format_mix(f"1. Uniform usage (value {uniform_value:.4f})",
+               types, uniform_p, CELL_CAP, LINE_WIDTH),
+    format_mix(f"2. Ladder usage, band {BAND} (value {trend_value:.4f})",
+               types, trend_p, CELL_CAP, LINE_WIDTH),
+    format_mix(f"3. Confidence interval, uniform usage ({N_SAMPLES} samples)",
+               types, ci_uniform_p, CELL_CAP, LINE_WIDTH),
+    format_mix(f"4. Confidence interval, ladder usage, band {BAND} ({N_SAMPLES} samples)",
+               types, ci_trend_p, CELL_CAP, LINE_WIDTH),
+]
+
+text = "\n".join(results)
+with open("nash_chart.txt", "w") as file:
+    file.write(text)
 
 with open("overall_chart.txt", "w") as file:
     for i in global_chart:

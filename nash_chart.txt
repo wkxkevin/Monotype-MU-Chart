@@ -1,0 +1,15 @@
+1. Uniform usage (value 0.5000)
+fightin flying  bug     steel   fire    water   electri ice     dragon  dark    fairy
+0.48%   17.84%  5.99%   9.02%   6.61%   11.25%  4.37%   2.75%   10.81%  23.94%  6.95%
+
+2. Ladder usage, band 0.25 (value 0.5337)
+flying
+100.00%
+
+3. Confidence interval, uniform usage (1000 samples)
+normal  fightin flying  poison  ground  rock    bug     ghost   steel   fire    water   grass   electri psychic ice     dragon  dark    fairy
+4.54%   3.11%   18.05%  2.63%   0.75%   0.41%   3.42%   1.10%   8.96%   4.06%   13.72%  0.26%   3.07%   0.39%   3.46%   8.74%   17.30%  6.03%
+
+4. Confidence interval, ladder usage, band 0.25 (1000 samples)
+normal  fightin flying  poison  ground  bug     ghost   steel   fire    water   electri ice     dragon  dark    fairy
+0.22%   0.20%   82.69%  0.06%   0.12%   0.02%   0.04%   6.42%   0.03%   1.00%   0.02%   0.02%   0.72%   7.43%   1.00%
